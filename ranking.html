@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ポケモン投票ランキング</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      font-family: sans-serif;
+      background: #f5f6f8;
+      color: #222;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .description {
+      text-align: center;
+      color: #666;
+      margin-bottom: 24px;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    button, .vote-link {
+      display: inline-block;
+      padding: 11px 18px;
+      border: none;
+      border-radius: 8px;
+      background: #333;
+      color: white;
+      font-size: 14px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    #status {
+      text-align: center;
+      color: #666;
+      margin: 20px 0;
+    }
+
+    #ranking {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ranking-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: white;
+      padding: 16px;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px #0000000d;
+    }
+
+    .rank {
+      flex: 0 0 54px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      color: #555;
+    }
+
+    .rank.top {
+      color: #b8860b;
+    }
+
+    .pokemon-name {
+      flex: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .votes {
+      flex-shrink: 0;
+      text-align: right;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .votes small {
+      display: block;
+      margin-top: 3px;
+      color: #777;
+      font-size: 11px;
+      font-weight: normal;
+    }
+
+    .empty {
+      padding: 24px;
+      background: white;
+      border-radius: 10px;
+      text-align: center;
+      color: #666;
+    }
+
+    @media (max-width: 420px) {
+      h1 {
+        font-size: 23px;
+      }
+
+      .ranking-item {
+        gap: 8px;
+        padding: 13px 10px;
+      }
+
+      .rank {
+        flex-basis: 44px;
+        font-size: 17px;
+      }
+
+      .pokemon-name {
+        font-size: 14px;
+      }
+
+      .votes {
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>ポケモン投票ランキング</h1>
+    <p class="description">みんなの投票結果</p>
+    <div class="search-area">
+      <input type="text"
+        id="searchBox"
+        placeholder="ポケモン名を検索"
+        autocomplete="off">
+      <button type="button" id="clearSearch">解除</button>
+    </div>
+
+    <div class="actions">
+      <button id="reloadButton" type="button"
+        onclick="loadRanking()">
+        最新の結果に更新
+      </button>
+
+      <a class="vote-link" href="index.html">
+        投票ページへ
+      </a>
+    </div>
+
+    <p id="status" role="status">ランキングを読み込み中...</p>
+    <section id="ranking" aria-label="投票ランキング"></section>
+  </main>
+
+  <script>
+    // 自分のApps ScriptのURL
+    const SCRIPT_URL =
+      "https://script.google.com/macros/s/AKfycbxHZEwtAd8CmZZsVhlyO-QT0_RK20cyJreqzUJBqtg6oEmzMqpP3BHqoIcbhJF5HxT-qA/exec";
+
+    let requestScript = null;
+    let requestTimer = null;
+
+    function loadRanking() {
+      const status = document.getElementById("status");
+      const ranking = document.getElementById("ranking");
+      const button = document.getElementById("reloadButton");
+
+      // 前回の通信が残っていれば片付ける
+      if (requestScript) {
+        requestScript.remove();
+        requestScript = null;
+      }
+
+      clearTimeout(requestTimer);
+
+      status.textContent = "ランキングを読み込み中...";
+      ranking.replaceChildren();
+      button.disabled = true;
+
+      // 一定時間応答がない場合はエラー表示
+      requestTimer = setTimeout(function() {
+        if (!requestScript) return;
+
+        requestScript.remove();
+        requestScript = null;
+        button.disabled = false;
+        status.textContent =
+          "読み込みに失敗しました。時間をおいて再度お試しください。";
+      }, 15000);
+
+      // Apps Scriptからランキングを取得
+      const script = document.createElement("script");
+      requestScript = script;
+
+      script.src = SCRIPT_URL +
+        "?action=ranking&t=" + Date.now();
+
+      script.onerror = function() {
+        if (requestScript !== script) return;
+
+        clearTimeout(requestTimer);
+        requestScript = null;
+        button.disabled = false;
+        status.textContent =
+          "読み込みに失敗しました。Apps Scriptのデプロイを確認してください。";
+        script.remove();
+      };
+
+      document.body.appendChild(script);
+    }
+
+// 読み込んだランキングを保存
+let allRanking = [];
+
+// ひらがなをカタカナに変換
+function toKatakana(text) {
+  return text.replace(/[\u3041-\u3096]/g, function(char) {
+    return String.fromCharCode(char.charCodeAt(0) + 0x60);
+  });
+}
+
+// 検索結果を表示
+function searchRanking() {
+  const keyword = toKatakana(
+    document.getElementById("searchBox").value.trim()
+  );
+
+  let filtered = allRanking;
+
+  if (keyword !== "") {
+    filtered = allRanking.filter(function(item) {
+      return toKatakana(String(item.name))
+        .includes(keyword);
+    });
+
+    // 検索に一致したポケモンを一番上にする
+    filtered.sort(function(a, b) {
+      const aName = toKatakana(String(a.name));
+      const bName = toKatakana(String(b.name));
+
+      const aStarts = aName.startsWith(keyword) ? 0 : 1;
+      const bStarts = bName.startsWith(keyword) ? 0 : 1;
+
+      return aStarts - bStarts ||
+        Number(a.rank) - Number(b.rank);
+    });
+  }
+
+  displayRanking(filtered);
+}
+
+// 検索欄のイベント
+document.getElementById("searchBox")
+  .addEventListener("input", searchRanking);
+
+document.getElementById("clearSearch")
+  .addEventListener("click", function() {
+    document.getElementById("searchBox").value = "";
+    searchRanking();
+  });
+    
+// Apps Scriptが返すデータを受け取る関数
+function showRanking(data) {
+  if (!requestScript) return;
+
+  clearTimeout(requestTimer);
+  requestScript.remove();
+  requestScript = null;
+
+  document.getElementById("reloadButton").disabled = false;
+
+  allRanking = Array.isArray(data) ? data : [];
+
+  searchRanking();
+}
+
+// ランキングを実際に画面に表示する
+function displayRanking(data) {
+  const status = document.getElementById("status");
+  const ranking = document.getElementById("ranking");
+
+  ranking.replaceChildren();
+
+  if (data.length === 0) {
+    status.textContent = "該当するポケモンが見つかりません。";
+    return;
+  }
+
+  status.textContent = data.length + "件を表示中";
+
+  const fragment = document.createDocumentFragment();
+
+  data.forEach(function(item) {
+    const card = document.createElement("article");
+    card.className = "ranking-item";
+
+    const rank = document.createElement("div");
+    rank.className = "rank";
+    rank.textContent = item.rank + "位";
+
+    if (Number(item.rank) <= 3) {
+      rank.classList.add("top");
+    }
+
+    const name = document.createElement("div");
+    name.className = "pokemon-name";
+    name.textContent = item.name;
+
+    const votes = document.createElement("div");
+    votes.className = "votes";
+
+    const voteCount = Number(item.votes);
+    votes.textContent =
+      (Number.isFinite(voteCount) ? voteCount : 0)
+        .toLocaleString("ja-JP") + "票";
+
+    const label = document.createElement("small");
+    label.textContent = "得票数";
+
+    votes.appendChild(label);
+    card.append(rank, name, votes);
+    fragment.appendChild(card);
+  });
+
+  ranking.appendChild(fragment);
+}
+
+    // ページを開いたら自動で読み込む
+    loadRanking();
+  </script>
+</body>
+</html>
